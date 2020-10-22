@@ -1,0 +1,72 @@
+{
+    "proposals": {
+        "Echo in Py!": {
+            "language": "Python3",
+            "points": 2,
+            "solution": "./example/sources/echo.py",
+            "scenarios": [
+                {
+                    "input": "Hello\n",
+                    "max_time": 1.0,
+                    "points": 1
+                },
+                {
+                    "input": "World\n",
+                    "max_time": 1.0,
+                    "points": 1
+                }
+            ]
+        },
+        "Echo in C++!": {
+            "language": "Cpp",
+            "points": 2,
+            "solution": "./example/sources/echo.cpp",
+            "scenarios": [
+                {
+                    "input": "Hello\n",
+                    "max_time": 5.0,
+                    "points": 1
+                },
+                {
+                    "input": "World\n",
+                    "max_time": 5.0,
+                    "points": 1
+                }
+            ]
+        },
+        "Echo in C!": {
+            "language": "C",
+            "points": 2,
+            "solution": "./example/sources/echo.c",
+            "scenarios": [
+                {
+                    "input": "Hello\n",
+                    "max_time": 5.0,
+                    "points": 1
+                },
+                {
+                    "input": "World\n",
+                    "max_time": 5.0,
+                    "points": 1
+                }
+            ]
+        },
+        "Echo in Rust!": {
+            "language": "Rust",
+            "points": 2,
+            "solution": "./example/sources/echo.rs",
+            "scenarios": [
+                {
+                    "input": "Hello\n",
+                    "max_time": 5.0,
+                    "points": 1
+                },
+                {
+                    "input": "World\n",
+                    "max_time": 5.0,
+                    "points": 1
+                }
+            ]
+        }
+    }
+}

@@ -1,0 +1,2 @@
+read word
+echo "${word}!"

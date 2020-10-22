@@ -1,0 +1,6 @@
+Beep boop! Tus resultados están aquí:
+
+-> Problema "Echo in C!": No se encontró el archivo "echo"
+-> Problema "Echo in Py!": 10
+-> Problema "Echo in Rust!": 0
+-> Problema "Echo in C++!": Problema de ejecución/compilación
