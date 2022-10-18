@@ -1,1 +1,6 @@
 **/target
+arena.json
+result.json
+problem-a.sh
+Cargo.lock
+settings.json

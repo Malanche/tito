@@ -2,16 +2,17 @@
 name = "tito"
 version = "0.1.0"
 authors = ["Carlos Malanche <carlos.malanche.f@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serde = {version = "1.0.116", features = ["derive"]}
-serde_json = "1.0.57"
-clap = "2.33.3"
+serde = {version = "1.0.145", features = ["derive"]}
+serde_json = "1.0.86"
+clap = {version = "4.0.17", features = ["derive"]}
 tempdir = "0.3.7"
-log = "0.4.11"
+log = {version = "0.4.17", features = ["std"]}
 lazy_static = "1.4.0"
-chrono = "0.4.19"
-wait-timeout = "0.1.5"
+chrono = "0.4.22"
+wait-timeout = "0.2.0"
+colored = "2.0.0"

@@ -1,60 +1,94 @@
-extern crate log;
-extern crate chrono;
+//! Logger for examples, based on Borntyping's Simple Logger <https://github.com/borntyping/rust-simple_logger>
+use chrono::Local;
+use colored::*;
+use log::{Level, LevelFilter, Log, Metadata, Record, SetLoggerError};
 
-use log::{Log, Record, Level, Metadata};
-use std::fs::{File, OpenOptions, read_dir};
-use std::path::PathBuf;
-use std::io::{prelude::*, BufReader};
-
-// Para imprimir el tiempo adecuadamente
-use chrono::prelude::*;
-
-pub struct TitoLogger{}
-
-impl Log for TitoLogger {
-    /// Indica qué nivel de bitácora se usará
-    fn enabled(&self, metadata: &Metadata) -> bool {
-        match metadata.level() {
-            Level::Error => true,
-            Level::Warn => true,
-            Level::Info => true,
-            Level::Debug => true,
-            Level::Trace => true
-        }
-    }
-
-    /// Lidia con los registros de manera individual
-    fn log(&self, record: &Record) {
-        // Sólo hacemos caso a los mensajes que planeamos guardar en la bitácora
-        if self.enabled(record.metadata()) {
-            // Ahora sí, escribimos el mensaje.
-            let dt = Local::now();//Utc.ymd(2014, 11, 28).and_hms(12, 0, 9);
-            let registry = match record.level() {
-                Level::Error => {
-                    format!("{} tito[\u{001b}[0;31m{}\u{001b}[0m]: {}", dt.format("%b %e %T"), record.level(), record.args())
-                },
-                Level::Warn => {
-                    format!("{} tito[\u{001b}[0;33m{}\u{001b}[0m]: {}", dt.format("%b %e %T"), record.level(), record.args())
-                }, 
-                Level::Info => {
-                    format!("{} tito[\u{001b}[0;34m{}\u{001b}[0m]: {}", dt.format("%b %e %T"), record.level(), record.args())
-                }
-                Level::Debug => {
-                    format!("{} tito[\u{001b}[0;36m{}\u{001b}[0m]: {}", dt.format("%b %e %T"), record.level(), record.args())
-                }
-                _ => format!("{} tito[{}]: {}", dt.format("%b %e %T"), record.level(), record.args())
-            };
-            println!("{}",&registry);
-        }
-    }
-
-    /// Función vacía
-    fn flush(&self) {}
+pub struct SimpleLogger {
+    default_level: LevelFilter,
+    module_levels: Vec<(String, LevelFilter)>,
 }
 
-impl TitoLogger {
-    /// Genera una nueva instancia del gestor de bitácoras.
-    pub fn new() -> TitoLogger {
-        TitoLogger{}
+impl SimpleLogger {
+    pub fn new() -> SimpleLogger {
+        SimpleLogger {
+            default_level: LevelFilter::Trace,
+            module_levels: Vec::new(),
+        }
     }
+
+    #[allow(dead_code)]
+    pub fn with_level(mut self, level: LevelFilter) -> SimpleLogger {
+        self.default_level = level;
+        self
+    }
+
+    #[allow(dead_code)]
+    pub fn with_module_level(mut self, target: &str, level: LevelFilter) -> SimpleLogger {
+        self.module_levels.push((target.to_string(), level));
+
+        /* Normally this is only called in `init` to avoid redundancy, but we can't initialize the logger in tests */
+        #[cfg(test)]
+        self.module_levels
+            .sort_by_key(|(name, _level)| name.len().wrapping_neg());
+
+        self
+    }
+
+    pub fn init(mut self) -> Result<(), SetLoggerError> {
+        self.module_levels
+            .sort_by_key(|(name, _level)| name.len().wrapping_neg());
+        let max_level = self
+            .module_levels
+            .iter()
+            .map(|(_name, level)| level)
+            .copied()
+            .max();
+        let max_level = max_level
+            .map(|lvl| lvl.max(self.default_level))
+            .unwrap_or(self.default_level);
+        log::set_max_level(max_level);
+        log::set_boxed_logger(Box::new(self))?;
+        Ok(())
+    }
+}
+
+impl Default for SimpleLogger {
+    fn default() -> Self {
+        SimpleLogger::new()
+    }
+}
+
+impl Log for SimpleLogger {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        &metadata.level().to_level_filter()
+            <= self
+                .module_levels
+                .iter()
+                .find(|(name, _level)| metadata.target().starts_with(name))
+                .map(|(_name, level)| level)
+                .unwrap_or(&self.default_level)
+    }
+
+    fn log(&self, record: &Record) {
+        if self.enabled(record.metadata()) {
+            let level_string = {
+                match record.level() {
+                    Level::Error => record.level().to_string().red(),
+                    Level::Warn => record.level().to_string().yellow(),
+                    Level::Info => record.level().to_string().cyan(),
+                    Level::Debug => record.level().to_string().purple(),
+                    Level::Trace => record.level().to_string().normal(),
+                }
+            };
+
+            println!(
+                "{} [{:<5}]: {}",
+                Local::now().format("%Y-%m-%d %H:%M:%S,%3f"),
+                level_string,
+                record.args()
+            );
+        }
+    }
+
+    fn flush(&self) {}
 }

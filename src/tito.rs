@@ -3,19 +3,17 @@ extern crate tempdir;
 extern crate wait_timeout;
 
 use crate::{
-    Settings, Arena, Competitor, Proposal, Problem, Language, LanguageSettings, Scenario, Tool, Evaluation
+    Settings, Arena, Competitor, Proposal, Problem, Language, LanguageSettings, Scenario, Evaluation
 };
 use wait_timeout::ChildExt;
-use log::{info, warn, error};
 use tempdir::TempDir;
 use std::fs::File;
 use std::io::prelude::*;
 use std::collections::{HashMap, HashSet};
-use std::path::{PathBuf, Path};
+use std::path::{PathBuf};
 use std::process::{Command, Stdio};
 
 pub struct Tito {
-    arena: Option<Arena>,
     language_settings: HashMap<Language, LanguageSettings>,
     dir: TempDir
 } 
@@ -24,44 +22,42 @@ impl Tito {
     pub fn new() -> Result<Tito, Error> {
         let dir = TempDir::new("tito").map_err(|e| Error::IOError(e))?;
         Ok(Tito {
-            arena: None,
             language_settings: HashMap::new(),
             dir
         })
     }
 
     pub fn build(&mut self, settings: Settings) -> Result<Arena, Error> {
-        let mut languages = HashSet::new();
+        let languages: HashSet<_> = settings.proposals.values().map(|proposal| proposal.language.clone()).collect();
 
-        for (_name, proposal) in settings.proposals.iter() {
-            languages.insert(proposal.language.clone());
-        }
-
-        info!("Gathering languages information...");
+        log::info!("Gathering languages information...");
         self.gather_language_info(languages)?;
 
         // Last but obviously not least, we test proposal codes
-        let mut problems = HashMap::new();
-        for (name, proposal) in settings.proposals.iter() {
-            info!("Evaluating \"{}\"", name);
+        let problems: HashMap<_, _> = settings.proposals.iter().map(|(name, proposal)| {
+            log::info!("Evaluating \"{}\"", name);
             // We extract the filename
             let filename = match PathBuf::from(&proposal.solution).as_path().file_stem() {
                 Some(os_str) => os_str.to_string_lossy().to_string(),
                 None => return Err(Error::NoFileName(name.clone()))
             };
+            // We test the proposal in the corresponding scenarios to get the solutions
             let solutions = self.test_proposal(proposal)?;
+            
+            // We alter the 
             let scenarios = proposal.scenarios.iter().zip(solutions.iter()).map(|(sc, so)| {
                 let mut sc = sc.clone();
                 sc.output = Some(so.trim().into());
                 sc
             }).collect();
-            problems.insert(name.clone(), Problem{
+            Ok((name.clone(), Problem {
                 scenarios,
                 filename,
                 language: Some(proposal.language.clone()),
                 points: proposal.points
-            });
-        }
+            }))
+        }).collect::<Result<_, _>>()?;
+
         Ok(Arena{problems})
     }
 
@@ -73,7 +69,7 @@ impl Tito {
             languages.insert(problem.language.clone().unwrap());
         }
 
-        info!("Gathering languages information...");
+        log::info!("Gathering languages information...");
         self.gather_language_info(languages)?;
 
         for competitor in competitors {
@@ -81,7 +77,7 @@ impl Tito {
             let mut user_grades = HashMap::new();
 
             for (name, problem) in arena.problems.iter() {
-                info!("Evaluating problem \"{}\" for competitor \"{}\"", name, competitor.id);
+                log::info!("Evaluating problem \"{}\" for competitor \"{}\"", name, competitor.id);
                 match self.evaluate(PathBuf::from(&competitor.files), problem) {
                     Ok(mut outputs) => {
                         let mut score = 0.0;
@@ -103,16 +99,15 @@ impl Tito {
 
                         score /= problem.points as f64;
 
-                        //
                         user_grades.insert(name.clone(), Evaluation::Grade{score});
                     },
                     Err(e) => match e {
                         Error::NoFileFound => {
-                            info!("File not found!");
+                            log::info!("File not found!");
                             user_grades.insert(name.clone(), Evaluation::NoFile);
                         },
                         other => {
-                            warn!("{}", other);
+                            log::warn!("{}", other);
                             user_grades.insert(name.clone(), Evaluation::RunError);
                         }
                     }
@@ -126,7 +121,7 @@ impl Tito {
 
     fn gather_language_info(&mut self, languages: HashSet<Language>) -> Result<(), Error> {
         for language in languages.iter() {
-            info!("Checking default tools for language {}", serde_json::to_string(&language).unwrap());
+            log::info!("Checking default tools for language {}", serde_json::to_string(&language).unwrap());
             let language_settings = LanguageSettings::default(language.clone());
 
             if let Some(pre_tools) = &language_settings.pre_tools {
@@ -134,7 +129,7 @@ impl Tito {
                     if !pre_tool.temporal {
                         match Tito::tool_exists(&pre_tool.utility) {
                             Ok(found) => if found {
-                                info!("Found pre-tool \"{}\"", &pre_tool.utility)
+                                log::info!("Found pre-tool \"{}\"", &pre_tool.utility)
                             } else {
                                 return Err(Error::MissingTool(format!("{}", &pre_tool.utility)));
                             },
@@ -146,7 +141,7 @@ impl Tito {
             if !language_settings.tool.temporal {
                 match Tito::tool_exists(&language_settings.tool.utility) {
                     Ok(found) => if found {
-                        info!("Found tool \"{}\"", &language_settings.tool.utility)
+                        log::info!("Found tool \"{}\"", &language_settings.tool.utility)
                     } else {
                         return Err(Error::MissingTool(format!("{}", &language_settings.tool.utility)));
                     },
@@ -209,7 +204,17 @@ impl Tito {
 
             Ok(output.status.success())
         } else {
-            Err("Still unimplemented".into())
+            let output = match Command::new("whereis")
+                .arg(tool_name.as_ref())
+                .stdin(Stdio::null()) 
+                .stderr(Stdio::null())
+                .stdout(Stdio::null())
+                .output() {
+                    Ok(v) => v,
+                    Err(e) => return Err(format!("{}", e))
+            };
+
+            Ok(output.status.success())
         }
     }
 
@@ -224,7 +229,12 @@ impl Tito {
                 }
                 source
             },
-            Err(e) => return Err(Error::IOError(e))
+            Err(e) => {
+                match e.kind() {
+                    std::io::ErrorKind::NotFound => return Err(Error::NoFileFound),
+                    _ => return Err(Error::IOError(e))
+                }
+            }
         };
         // We load the languae settings
         if let Some(language_setting) = self.language_settings.get(&proposal.language) {
@@ -276,9 +286,12 @@ impl Tito {
             if queen {
                 // We go through each scenario
                 for scenario in &scenarios {
+
+                    let final_args: Vec<_> = args.clone().into_iter().chain(scenario.arguments.clone().unwrap_or_else(|| vec![]).into_iter()).collect();
+
                     let mut child = match Command::new(&utility)
                         .current_dir(path.clone())
-                        .args(&args)
+                        .args(&final_args)
                         .stdin(Stdio::piped()) // Para poder pasar argumentos al programa
                         .stderr(Stdio::piped()) // Para poder capturar la salida de error
                         .stdout(Stdio::piped()).spawn() {
@@ -292,14 +305,25 @@ impl Tito {
                         let child_stdin = match child.stdin.as_mut() {
                             Some(v) => v,
                             None => {
-                                child.kill();
+                                match child.kill() {
+                                    Ok(_) => (),
+                                    Err(e) => {
+                                        log::error!("{}", e);
+                                    }
+                                }
                                 return Err(Error::ChildStdinRef)
                             }
                         };
                         match child_stdin.write_all(input.as_bytes()) {
                             Ok(_) => (),
                             Err(e) => {
-                                child.kill();
+                                log::error!("{}", e);
+                                match child.kill() {
+                                    Ok(_) => (),
+                                    Err(e) => {
+                                        log::error!("{}", e);
+                                    }
+                                }
                                 return Err(Error::ChildStdinFeed);
                             }
                         }
@@ -313,7 +337,7 @@ impl Tito {
                                 match child.kill() {
                                     Ok(_) => (),
                                     Err(e) => {
-                                        warn!("Could not kill process: {}", e);
+                                        log::warn!("Could not kill process: {}", e);
                                     }
                                 };
                                 values.push(Err(Error::TimeExceeded));
@@ -390,7 +414,7 @@ impl std::fmt::Display for Error {
             Error::WaitOutputError(detail) => format!("Wait for output failed, {}", detail),
             Error::RuntimeError(detail) => format!("Runtime error, {}", detail),
             Error::TimeExceeded => format!("The execution exceeded the maximum time"),
-            Error::NoFileFound => format!("Could not evaluete due to lack of file"),
+            Error::NoFileFound => format!("Could not evaluate due to lack of file"),
             Error::Utf8 => format!("A byte stream received was not utf-8 valid"),
             Error::NoSolution(name, idx) => format!("No solution was provided for problem {}, scenario {}", name, idx),
             Error::SettingsError => format!("An error with the settings has occured"),

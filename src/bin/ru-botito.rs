@@ -4,180 +4,219 @@ extern crate clap;
 extern crate lazy_static;
 extern crate log;
 
-use log::{info, warn, error, LevelFilter};
-use clap::{App, Arg, SubCommand, AppSettings};
-use tito::{Tito, TitoLogger, Competitor, Settings, Arena, Evaluation};
+use clap::{Parser};
+use tito::{Tito, SimpleLogger, Competitor, Settings, Arena, Evaluation};
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::PathBuf;
-use std::collections::HashMap;
 
-lazy_static::lazy_static! {
-    static ref LOGGER: TitoLogger = TitoLogger::new();
+#[derive(Parser, Debug)]
+enum Args {
+    #[clap(about = "build subcommand to precompute the answers to the problems")]
+    Build(BuildArgs),
+    #[clap(about = "run subcommand for executing the robot")]
+    Run(RunArgs)
+}
+
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct BuildArgs {
+   #[clap(long, help = "path to the location of the problem configuration file")]
+   settings: Option<String>,
+   #[clap(long, help = "generates a very basic example config and a very basic shell problem")]
+   example_config: bool
+}
+
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct RunArgs {
+   #[clap(long, help = "path to the location of the arena file")]
+   arena: String,
+   #[clap(long, help = "competitor list")]
+   competitor: Vec<String>
 }
 
 fn main() {
-    let matches = App::new("tito")
-        .setting(AppSettings::ArgRequiredElseHelp)
-        .subcommand(SubCommand::with_name("build")
-            .about("Builds the file with the answers to the problems to be evaluated")
-            .arg(Arg::with_name("settings")
-                .required(true)
-                .takes_value(true)
-                .short("s")
-                .long("settings")
-            )
-        ).subcommand(SubCommand::with_name("run")
-            .about("Runs tito")
-            .arg(Arg::with_name("arena")
-                .short("a")
-                .long("arena")
-                .required(true)
-                .takes_value(true)
-            ).arg(Arg::with_name("competitor")
-                .short("c")
-                .long("competitor")
-                .required(true)
-                .multiple(true)
-                .takes_value(true)
-            )
-        ).get_matches();
+    let matches = Args::parse();
+    
+    SimpleLogger::new().with_level(log::LevelFilter::Info).init().unwrap();
+    log::info!("Beep Boop \u{1f916}");
 
-    log::set_logger(&(*LOGGER)).map(|()| log::set_max_level(LevelFilter::Info)).unwrap();
-    info!("Beep Boop \u{1f916}");
-
-    match matches.subcommand() {
-        ("build", Some(sub_m)) => {
-            let settings_path = sub_m.value_of("settings").unwrap();
-            // We check if there are indeed settings in the path
-            let settings: Settings = match File::open(&settings_path) {
-                Ok(mut f) => {
-                    let mut content = String::new();
-                    f.read_to_string(&mut content);
-                    let value: serde_json::Value =  match serde_json::from_str(&content) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            error!("Could not load json from file, {}", e);
-                            return;
+    match matches {
+        Args::Build(build_args) => {
+            if build_args.example_config {
+                match serde_json::to_string_pretty(&Settings::example()) {
+                    Ok(content) => {
+                        match File::create("./settings.json") {
+                            Ok(mut f) => {
+                                match f.write_all(content.as_bytes()) {
+                                    Ok(_) => log::info!("example settings written to `settings.json`"),
+                                    Err(e) => {
+                                        log::error!("{}", e);
+                                    }
+                                }
+                                // Now we write the example problem
+                                match File::create("problem-a.sh".to_string()) {
+                                    Ok(mut f) => {
+                                        match f.write_all(b"echo \"Hello, ${1}!\"\n") {
+                                            Ok(_) => log::info!("example poblem written to `problem-a.sh`"),
+                                            Err(e) => {
+                                                log::error!("{}", e);
+                                            }
+                                        }
+                                    },
+                                    Err(e) => {
+                                        log::error!("{}", e);
+                                    }
+                                }
+                            },
+                            Err(e) => {
+                                log::error!("{}", e);
+                            }
                         }
-                    };
-                    match serde_json::from_value(value) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            error!("Could not load settings, {}", e);
-                            return;
-                        }
+                    },
+                    Err(e) => {
+                        log::error!("{}", e);
                     }
-                },
-                Err(e) => {
-                    error!("Could not load settings, {}", e);
-                    return;
                 }
-            };
-
-            let mut t = match Tito::new() {
-                Ok(v) => v,
-                Err(e) => {
-                    error!("{}", e);
-                    return;
-                }
-            };
-            let arena = match t.build(settings) {
-                Ok(v) => v,
-                Err(e) => {
-                    error!("{}", e);
-                    return;
-                }
-            };
-            // We write the arena to an arena.json file
-            match serde_json::to_string_pretty(&arena) {
-                Ok(v) => match File::create("arena.json") {
+            } else {
+                let settings_path = build_args.settings.unwrap_or("./settings.json".to_string());
+                // We check if there are indeed settings in the path
+                let settings: Settings = match File::open(&settings_path) {
                     Ok(mut f) => {
-                        match f.write_all(v.as_bytes()) {
+                        let mut content = String::new();
+                        match f.read_to_string(&mut content) {
                             Ok(_) => (),
                             Err(e) => {
-                                error!("{}", e);
+                                log::error!("{}", e);
+                                return;
+                            }
+                        }
+                        let value: serde_json::Value =  match serde_json::from_str(&content) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                log::error!("Could not load json from file, {}", e);
+                                return;
+                            }
+                        };
+                        match serde_json::from_value(value) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                log::error!("Could not load settings, {}", e);
                                 return;
                             }
                         }
                     },
                     Err(e) => {
-                        error!("{}", e);
+                        log::error!("Could not load settings, {}", e);
                         return;
                     }
-                },
-                Err(e) => {
-                    error!("{}", e);
-                    return;
+                };
+    
+                let mut t = match Tito::new() {
+                    Ok(v) => v,
+                    Err(e) => {
+                        log::error!("{}", e);
+                        return;
+                    }
+                };
+    
+                let arena = match t.build(settings) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        log::error!("{}", e);
+                        return;
+                    }
+                };
+    
+                // We write the arena to an arena.json file
+                match serde_json::to_string_pretty(&arena) {
+                    Ok(v) => match File::create("arena.json") {
+                        Ok(mut f) => {
+                            match f.write_all(v.as_bytes()) {
+                                Ok(_) => (),
+                                Err(e) => {
+                                    log::error!("{}", e);
+                                    return;
+                                }
+                            }
+                        },
+                        Err(e) => {
+                            log::error!("{}", e);
+                            return;
+                        }
+                    },
+                    Err(e) => {
+                        log::error!("{}", e);
+                        return;
+                    }
                 }
+                log::info!("Arena saved to ./arena.json");
             }
-            info!("Arena saved to ./arena.json");
         },
-        ("run", Some(sub_m)) => {
-            let competitors_string = sub_m.values_of("competitor").unwrap();
-            let mut competitors = Vec::new();
-            let mut competitor_dir = HashMap::new();
-            for competitor_string in competitors_string {
+        Args::Run(run_args) => {
+            let competitors: Vec<_> = match run_args.competitor.iter().map(|competitor_string| {
                 let tokens: Vec<&str> = competitor_string.split(":").collect();
                 if tokens.len() != 3 {
-                    error!("Competitor must be described as id:path_to_files:path_for_result");
-                    return;
+                    return Err("Competitors must be described as id:path_to_files:path_for_result");
                 }
                 if tokens[0].len() == 0 {
-                    error!("Every competitor needs an id.");
-                    return;
+                    return Err("Every competitor needs an id.");
                 }
                 if tokens[1].len() == 0 {
-                    error!("Every competitor needs a path to the files");
-                    return;
+                    return Err("Every competitor needs a path to the files");
                 }
-                let competitor = Competitor {
+                Ok(Competitor {
                     id: tokens[0].into(),
                     files: tokens[1].into(),
                     result: if tokens[2].len() == 0 { None } else { Some(tokens[2].into()) }
-                };
-                competitor_dir.insert(competitor.id.clone(), competitor.result.clone());
-                competitors.push(competitor);
-            }
-
-            let mut t = match Tito::new() {
+                })
+            }).collect::<Result<_, _>>() {
                 Ok(v) => v,
                 Err(e) => {
-                    error!("{}", e);
+                    log::error!("{}", e);
+                    return;
+                }
+            };
+            
+            let mut tito = match Tito::new() {
+                Ok(v) => v,
+                Err(e) => {
+                    log::error!("{}", e);
                     return;
                 }
             };
 
-            let arena: Arena = match File::open(sub_m.value_of("arena").unwrap()) {
+            let arena: Arena = match File::open(run_args.arena) {
                 Ok(mut f) => {
                     let mut content = String::new();
                     match f.read_to_string(&mut content) {
                         Ok(_) => (),
                         Err(e) => {
-                            error!("{}", e);
+                            log::error!("{}", e);
                             return;
                         }
                     }
                     match serde_json::from_str(&content) {
                         Ok(v) => v,
                         Err(e) => {
-                            error!("{}", e);
+                            log::error!("{}", e);
                             return;
                         }
                     }
                 },
                 Err(e) => {
-                    error!("{}", e);
+                    log::error!("{}", e);
                     return;
                 }
             };
 
-            match t.run(competitors, arena.clone()) {
-                Ok(v) => {
-                    let content = match serde_json::to_string_pretty(&v) {
+            match tito.run(competitors.clone(), arena.clone()) {
+                Ok(results) => {
+                    let content = match serde_json::to_string_pretty(&results) {
                         Ok(s) => s,
                         Err(e) => {
-                            error!("{}", e);
+                            log::error!("{}", e);
                             return;
                         }
                     };
@@ -186,38 +225,38 @@ fn main() {
                             match f.write_all(content.as_bytes()) {
                                 Ok(_) => (),
                                 Err(e) => {
-                                    error!("{}", e);
+                                    log::error!("{}", e);
                                     return;
                                 }
                             }
                         },
                         Err(e) => {
-                            error!("{}", e);
+                            log::error!("{}", e);
                             return;
                         }
                     }
-                    info!("Result save to result.json");
+                    log::info!("Result save to result.json");
 
-                    for (user_name, problems) in v.iter() {
-                        if let Some(dir) = competitor_dir.get(user_name) {
-                            if let Some(dir) = dir {
-                                info!("Adding result to {}", user_name);
-                                let mut report: String = "Beep boop! Tus resultados están aquí:\n\n".into();
-                                for (p_name, evaluation) in problems.iter() {
+                    for competitor in competitors {
+                        if let Some(grades) = results.get(&competitor.id) {
+                            if let Some(dir) = competitor.result {
+                                log::info!("Adding result to {}", competitor.id);
+                                let mut report: String = "Beep boop! Your results are here:\n\n".into();
+                                for (p_name, evaluation) in grades.iter() {
                                     if let Some(problem) = arena.problems.get(p_name) {
                                         match evaluation {
                                             Evaluation::Grade{score} => {
-                                                report += &format!("-> Problema \"{}\": {}\n", p_name, score*10.0);
+                                                report += &format!("-> problem \"{}\": {}\n", p_name, score*10.0);
                                             },
                                             Evaluation::RunError => {
-                                                report += &format!("-> Problema \"{}\": Problema de ejecución/compilación\n", p_name);
+                                                report += &format!("-> problem \"{}\": execution/compilation error\n", p_name);
                                             },
                                             Evaluation::NoFile => {
-                                                report += &format!("-> Problema \"{}\": No se encontró el archivo \"{}\"\n", p_name, problem.filename);
+                                                report += &format!("-> problem \"{}\": file not found \"{}\"\n", p_name, problem.filename);
                                             }
                                         }
                                     } else {
-                                        error!("Problem data not found");
+                                        log::error!("Problem data not found");
                                         return;
                                     }
                                 }
@@ -227,28 +266,25 @@ fn main() {
                                     Ok(mut f) => {
                                         match f.write_all(report.as_bytes()) {
                                             Ok(_) => (),
-                                            Err(e) => warn!("Could not write report for user \"{}\", {}", user_name, e)
+                                            Err(e) => log::warn!("Could not write report for user \"{}\", {}", competitor.id, e)
                                         };
                                     },
-                                    Err(e) => warn!("Could not create report for user \"{}\", {}", user_name, e) 
+                                    Err(e) => log::warn!("Could not create report for user \"{}\", {}", competitor.id, e) 
                                 }
                             } else {
-                                info!("No place to store results for user \"{}\"", user_name);
+                                log::info!("competitor {} will not receive grades", competitor.id);
                             }
                         } else {
-                            warn!("User does not seem to exist again \"{}\"", user_name);
+                            log::error!("somehow, grades for competitor {} are not present", competitor.id);
                         }
                     }
                 },
                 Err(e) => {
-                    error!("{}", e);
+                    log::error!("{}", e);
                     return;
                 }
-            };
-        },
-        _ => {
-            panic!("Impossible");
-        }, 
+            }
+        }
     }
 }
 

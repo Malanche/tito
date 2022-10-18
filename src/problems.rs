@@ -11,10 +11,11 @@ pub struct Scenario {
     /// Std input for the program
     pub input: Option<String>,
     /// Expected output
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<String>,
-    /// Maximum allowed time
+    /// Maximum allowed time, in seconds
     pub max_time: f32,
-    /// Maximum allowed Ram
+    /// Maximum allowed Ram, in bytes
     pub max_ram: Option<u32>,
     /// Points that this scenario gives
     pub points: u32
@@ -36,8 +37,12 @@ pub struct Problem {
 /// Describes a problem, which has multiple scenarios and a certain language
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Proposal {
+    /// Input scenarios
     pub scenarios: Vec<Scenario>,
+    /// Path to the solution of the problem
     pub solution: String,
+    /// Language the problem is written in
     pub language: Language,
+    /// Number of points this problem gives
     pub points: u32
 }

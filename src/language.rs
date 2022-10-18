@@ -1,7 +1,6 @@
 extern crate serde;
 
 use serde::{Serialize, Deserialize};
-use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Tool {
@@ -25,6 +24,72 @@ pub enum Language {
 }
 
 impl Eq for Language{}
+
+impl Language {
+    pub fn default_settings(&self) -> LanguageSettings {
+        match self {
+            Language::Rust => {
+                let pre_tools = Some(vec![Tool{utility: "rustc".into(), temporal: false, arguments: vec!["-o".into(), "a.exe".into(), "{filename}".into()]}]);
+                let tool = Tool{utility: "{pwd}/a.exe".into(), temporal: true, arguments: vec![]};
+                LanguageSettings {
+                    pre_tools,
+                    tool,
+                    extension: "rs".into()
+                }
+            },
+            Language::Shell => {
+                let tool = Tool{utility: "bash".into(), temporal: false, arguments: vec!["{filename}".into()]};
+                LanguageSettings {
+                    pre_tools: None,
+                    tool,
+                    extension: "sh".into()
+                }
+            },
+            Language::Cpp => {
+                let pre_tools = Some(vec![Tool{utility: "g++".into(), temporal: false, arguments: vec!["-o".into(), "a.exe".into(), "{filename}".into()]}]);
+                let tool = Tool{utility: "{pwd}/a.exe".into(), temporal: true, arguments: vec![]};
+                LanguageSettings {
+                    pre_tools,
+                    tool,
+                    extension: "cpp".into()
+                }
+            },
+            Language::C => {
+                let pre_tools = Some(vec![Tool{utility: "gcc".into(), temporal: false, arguments: vec!["-o".into(), "a.exe".into(), "{filename}".into()]}]);
+                let tool = Tool{utility: "{pwd}/a.exe".into(), temporal: true, arguments: vec![]};
+                LanguageSettings {
+                    pre_tools,
+                    tool,
+                    extension: "c".into()
+                }
+            },
+            Language::Python2 => {
+                let tool = if cfg!(target_os = "windows") {
+                    Tool{utility: "python".into(), temporal: false, arguments: vec!["{filename}".into()]}
+                } else {
+                    Tool{utility: "python2".into(), temporal: false, arguments: vec!["{filename}".into()]}
+                };
+                LanguageSettings {
+                    pre_tools: None,
+                    tool,
+                    extension: "py".into()
+                }
+            },
+            Language::Python3 => {
+                let tool = if cfg!(target_os = "windows") {
+                    Tool{utility: "python".into(), temporal: false, arguments: vec!["{filename}".into()]}
+                } else {
+                    Tool{utility: "python3".into(), temporal: false, arguments: vec!["{filename}".into()]}
+                };
+                LanguageSettings {
+                    pre_tools: None,
+                    tool,
+                    extension: "py".into()
+                }
+            }
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct LanguageSettings {
@@ -75,7 +140,7 @@ impl LanguageSettings {
                 }
             },
             Language::Python2 => {
-                let tool = if(cfg!(target_os = "windows")) {
+                let tool = if cfg!(target_os = "windows") {
                     Tool{utility: "python".into(), temporal: false, arguments: vec!["{filename}".into()]}
                 } else {
                     Tool{utility: "python2".into(), temporal: false, arguments: vec!["{filename}".into()]}
@@ -87,7 +152,7 @@ impl LanguageSettings {
                 }
             },
             Language::Python3 => {
-                let tool = if(cfg!(target_os = "windows")) {
+                let tool = if cfg!(target_os = "windows") {
                     Tool{utility: "python".into(), temporal: false, arguments: vec!["{filename}".into()]}
                 } else {
                     Tool{utility: "python3".into(), temporal: false, arguments: vec!["{filename}".into()]}
